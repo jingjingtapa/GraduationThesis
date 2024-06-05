@@ -1,9 +1,7 @@
-import random
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.ndimage import rotate
 from heapq import heappop, heappush
-from matplotlib.animation import FuncAnimation
 
 def rotate_submatrix(matrix, position, size, angle):
     submatrix = matrix[position[1]:position[1]+size[1], position[0]:position[0]+size[0]]
@@ -32,7 +30,7 @@ class HybridAStar:
         while self.open_set:
             current_cost, current = heappop(self.open_set)
             if self.is_goal(current):
-                return self.reconstruct_path()
+                return self.reconstruct_path(current)
 
             for next in self.get_neighbors(current):
                 new_cost = self.cost_so_far[current] + self.cost(current, next)
@@ -40,7 +38,6 @@ class HybridAStar:
                     self.cost_so_far[next] = new_cost
                     priority = new_cost + self.heuristic(next, self.goal)
                     heappush(self.open_set, (priority, next))
-                    # print('search',(priority, next))
                     self.came_from[next] = current
         return []
 
@@ -51,7 +48,7 @@ class HybridAStar:
                 new_yaw = current[2] + d * self.yaw_resolution
                 new_x = current[0] + step * self.grid_resolution * np.cos(new_yaw)
                 new_y = current[1] + step * self.grid_resolution * np.sin(new_yaw)
-                new_pos = (new_x, new_y, new_yaw)
+                new_pos = (int(new_x), int(new_y), new_yaw)
                 if self.is_valid(new_pos):
                     neighbors.append(new_pos)
         return neighbors
@@ -68,9 +65,8 @@ class HybridAStar:
     def is_goal(self, pos):
         return np.linalg.norm(np.array(pos[:2]) - np.array(self.goal[:2])) < self.grid_resolution
 
-    def reconstruct_path(self):
+    def reconstruct_path(self, current):
         path = []
-        current = self.goal
         while current is not None:
             path.append(current)
             current = self.came_from[current]
@@ -78,11 +74,28 @@ class HybridAStar:
         return path
     
 # 시작 및 목표 지점 설정
-grid = np.zeros((100, 100))
-start = (0, 0, 0)
-goal = (50, 50, 0)
-grid_resolution = 2.0
+grid = np.zeros((500, 500))  
+start = (80, 0, 90)
+goal = (450, 450, 0) 
+grid_resolution = 5.0
 yaw_resolution = np.deg2rad(15.0)
 planner = HybridAStar(start, goal, grid, grid_resolution, yaw_resolution)
 path = planner.search()
-print(path)
+# print(path)
+
+# 경로 시각화
+def visualize_path(grid, path):
+    fig, ax = plt.subplots()
+    ax.imshow(grid, cmap='Greys', origin='lower')
+
+    x = [p[0] for p in path]
+    y = [p[1] for p in path]
+
+    ax.plot(x, y, marker='o', color='r')
+
+    plt.xlim(0, grid.shape[1])
+    plt.ylim(0, grid.shape[0])
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.show()
+
+visualize_path(grid, path)

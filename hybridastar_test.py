@@ -1,4 +1,3 @@
-import random
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.ndimage import rotate
@@ -18,6 +17,7 @@ class HybridAStar:
         self.grid_resolution = grid_resolution
         self.yaw_resolution = yaw_resolution
         self.open_set = []
+        # (current cost , x, y, direction)
         heappush(self.open_set, (0, start))
         self.came_from = {}
         self.cost_so_far = {}
@@ -31,7 +31,7 @@ class HybridAStar:
         while self.open_set:
             current_cost, current = heappop(self.open_set)
             if self.is_goal(current):
-                return self.reconstruct_path()
+                return self.reconstruct_path(current)
 
             for next in self.get_neighbors(current):
                 new_cost = self.cost_so_far[current] + self.cost(current, next)
@@ -49,7 +49,7 @@ class HybridAStar:
                 new_yaw = current[2] + d * self.yaw_resolution
                 new_x = current[0] + step * self.grid_resolution * np.cos(new_yaw)
                 new_y = current[1] + step * self.grid_resolution * np.sin(new_yaw)
-                new_pos = (new_x, new_y, new_yaw)
+                new_pos = (int(new_x), int(new_y), new_yaw)
                 if self.is_valid(new_pos):
                     neighbors.append(new_pos)
         return neighbors
@@ -66,9 +66,8 @@ class HybridAStar:
     def is_goal(self, pos):
         return np.linalg.norm(np.array(pos[:2]) - np.array(self.goal[:2])) < self.grid_resolution
 
-    def reconstruct_path(self):
+    def reconstruct_path(self, current):
         path = []
-        current = self.goal
         while current is not None:
             path.append(current)
             current = self.came_from[current]
@@ -90,25 +89,41 @@ left_line, center_line, right_line = int(margin), int(2*margin + lane_width), in
 grid[:, left_line:left_line + line_width] = 1
 grid[:, right_line:right_line + line_width] = 1
         
-###### 주변 차량 ######
-# 좌하측 위치, 너비, 높이
-other_car = [(85, 50), (85, 700), (85,1300)]
-cnt = 2
-for cx, cy in other_car:
-    grid[cy:cy+car_height+1, cx:cx+car_width+1] = cnt
-    cnt += 1
+# ###### 주변 차량 ######
+# # 좌하측 위치, 너비, 높이
+# other_car = [(85, 50), (85, 700), (85,1300)]
+# cnt = 2
+# for cx, cy in other_car:
+#     grid[cy:cy+car_height+1, cx:cx+car_width+1] = cnt
+#     cnt += 1
 
 # 시작 및 목표 지점 설정
 start = (85, 50, 0)
-goal = (1500, 700, 0)
-grid_resolution = 2.0
+goal = (500, 500, 0)
+grid_resolution = 5.0
 yaw_resolution = np.deg2rad(15.0)
 planner = HybridAStar(start, goal, grid, grid_resolution, yaw_resolution)
 path = planner.search()
 
 
+# 경로 시각화
+def visualize_path(grid, path):
+    fig, ax = plt.subplots()
+    ax.imshow(grid, cmap='Greys', origin='lower')
 
-# 경로가 비어있을 경우 처리
+    x = [p[0] for p in path]
+    y = [p[1] for p in path]
+
+    ax.plot(x, y, marker='o', color='r')
+
+    plt.xlim(0, grid.shape[1])
+    plt.ylim(0, grid.shape[0])
+    plt.gca().set_aspect('equal', adjustable='box')
+    plt.show()
+
+visualize_path(grid, path)
+
+# # 경로가 비어있을 경우 처리
 # if not path:
 #     print("경로를 찾을 수 없습니다.")
 # else:
