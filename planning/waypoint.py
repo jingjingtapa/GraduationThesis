@@ -4,49 +4,64 @@ import numpy as np
 import math
 import random
 
-# PyGame 초기화
 pygame.init()
-
-# 색상 정의
-WHITE = (255, 255, 255)
 RED = (255, 0, 0)
 BLUE = (0, 0, 255)
 GREEN = (0, 255, 0)
-
-# PyGame 화면 초기화
+YELLOW = (255, 255, 0)
 DISPLAY_WIDTH = 800
 DISPLAY_HEIGHT = 600
 display = pygame.display.set_mode((DISPLAY_WIDTH, DISPLAY_HEIGHT), pygame.HWSURFACE | pygame.DOUBLEBUF)
+pygame.display.set_caption('Vehicle Visualization')
 clock = pygame.time.Clock()
 
-# Carla 클라이언트 설정
 client = carla.Client('localhost', 2000)
 client.set_timeout(10.0)
 
-# 웨이포인트 시각화 함수
-def draw_waypoints(display, map, vehicle_location, scale=1.5, point_radius=3, close_point_radius=5):
-    """
-    전체 웨이포인트와 차량 주변의 웨이포인트를 시각화하는 함수
-    """
-    # 전체 웨이포인트 시각화
-    waypoints = map.generate_waypoints(8.0)  # 전체 맵에 8미터 간격으로 waypoints 생성
-    for waypoint in waypoints:
-        wp_location = waypoint.transform.location
-        x = int((wp_location.x - vehicle_location.x) * scale + DISPLAY_WIDTH / 2)
-        y = int((vehicle_location.y - wp_location.y) * scale + DISPLAY_HEIGHT / 2)
-        pygame.draw.circle(display, WHITE, (x, y), point_radius)
+def draw_vehicle(display, vehicle_transform, vehicle_width, vehicle_length):
+    vehicle_location = vehicle_transform.location
+    vehicle_heading = np.deg2rad(vehicle_transform.rotation.yaw)
+    center_x = DISPLAY_WIDTH // 2
+    center_y = DISPLAY_HEIGHT // 2
 
-    # 차량 주변 웨이포인트 시각화
-    close_waypoints = map.generate_waypoints(2.0)  # 차량 주변에 2미터 간격으로 waypoints 생성
+    # Calculate the four corners of the vehicle
+    corners = []
+    for dx, dy in [(-vehicle_length / 2, -vehicle_width / 2), (-vehicle_length / 2, vehicle_width / 2),
+                   (vehicle_length / 2, vehicle_width / 2), (vehicle_length / 2, -vehicle_width / 2)]:
+        rotated_x = dx * math.cos(vehicle_heading) - dy * math.sin(vehicle_heading)
+        rotated_y = dx * math.sin(vehicle_heading) + dy * math.cos(vehicle_heading)
+        corners.append((center_x + rotated_x * 30, center_y + rotated_y * 30))
+
+    # Draw the vehicle as a polygon
+    pygame.draw.polygon(display, BLUE, corners, 0)  # Fill color
+    pygame.draw.polygon(display, YELLOW, corners, 3)  # Border color
+
+def draw_close_waypoints(display, map, vehicle_transform, radius=10):
+    display.fill((0, 0, 0))
+    vehicle_location = vehicle_transform.location
+    vehicle_heading = np.deg2rad(vehicle_transform.rotation.yaw)
+
+    close_waypoints = map.generate_waypoints(2)
     for waypoint in close_waypoints:
         wp_location = waypoint.transform.location
         distance = math.sqrt((wp_location.x - vehicle_location.x) ** 2 + (wp_location.y - vehicle_location.y) ** 2)
-        if distance < 50:  # 50미터 이내
-            x = int((wp_location.x - vehicle_location.x) * scale + DISPLAY_WIDTH / 2)
-            y = int((vehicle_location.y - wp_location.y) * scale + DISPLAY_HEIGHT / 2)
-            pygame.draw.circle(display, RED, (x, y), close_point_radius)
+        if distance < radius:
+            lane_width = waypoint.lane_width / 2
+            perpendicular_heading = np.deg2rad(waypoint.transform.rotation.yaw + 90)
 
-# 주 프로그램 함수
+            left_x = wp_location.x + lane_width * math.cos(perpendicular_heading)
+            left_y = wp_location.y + lane_width * math.sin(perpendicular_heading)
+            right_x = wp_location.x - lane_width * math.cos(perpendicular_heading)
+            right_y = wp_location.y - lane_width * math.sin(perpendicular_heading)
+
+            for x, y, color in [(left_x, left_y, GREEN), (right_x, right_y, GREEN)]:
+                screen_x = int((vehicle_location.x - x) * 50 + DISPLAY_WIDTH / 2)
+                screen_y = int((vehicle_location.y - y) * 50 + DISPLAY_HEIGHT / 2)
+                pygame.draw.circle(display, color, (screen_x, screen_y), 5)
+
+    draw_vehicle(display, vehicle_transform, 2.5, 5)
+    pygame.display.flip()
+
 def main():
     world = client.get_world()
     blueprint_library = world.get_blueprint_library()
@@ -61,12 +76,8 @@ def main():
                 if event.type == pygame.QUIT:
                     return
 
-            vehicle_location = vehicle.get_transform().location
-
-            display.fill((0, 0, 0))  # 화면을 검은색으로 지움
-            draw_waypoints(display, world.get_map(), vehicle_location)
-            pygame.draw.circle(display, BLUE, (DISPLAY_WIDTH // 2, DISPLAY_HEIGHT // 2), 7)  # 차량 위치
-            pygame.display.flip()
+            vehicle_transform = vehicle.get_transform()
+            draw_close_waypoints(display, world.get_map(), vehicle_transform)
             clock.tick(30)
 
     finally:
