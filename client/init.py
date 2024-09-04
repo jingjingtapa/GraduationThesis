@@ -6,7 +6,7 @@ class initializer:
         self.client.set_timeout(10.0)
         self.world = self.client.get_world()
         # self.world = self.client.load_world('Town01_Opt', carla.MapLayer.Buildings | carla.MapLayer.ParkedVehicles)
-        self.world.unload_map_layer(carla.MapLayer.Buildings)
+        # self.world.unload_map_layer(carla.MapLayer.Buildings)
         self.blueprint_library = self.world.get_blueprint_library()
         self.spawn_points = self.world.get_map().get_spawn_points()
         self.traffic_manager = self.client.get_trafficmanager(8000)

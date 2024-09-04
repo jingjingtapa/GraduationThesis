@@ -12,7 +12,7 @@ clock = pygame.time.Clock()
 
 def draw_vehicle(display, vehicle_transform, vehicle_width, vehicle_length):
     vehicle_heading = np.deg2rad(vehicle_transform.rotation.yaw)
-    center_x, center_y= sim.DISPLAY_WIDTH // 2, sim.DISPLAY_HEIGHT // 2
+    center_x, center_y = sim.DISPLAY_WIDTH // 2, sim.DISPLAY_HEIGHT // 2
 
     corners = []
     for dx, dy in [(-vehicle_length / 2, -vehicle_width / 2), (-vehicle_length / 2, vehicle_width / 2),
@@ -23,7 +23,7 @@ def draw_vehicle(display, vehicle_transform, vehicle_width, vehicle_length):
 
     pygame.draw.polygon(display, sim.BLUE, corners, 0) 
     pygame.draw.polygon(display, sim.YELLOW, corners, 3)
-
+    
 def draw_close_waypoints(display, map, vehicle_transform, radius, vehicle_width, vehicle_length):
     display.fill((0, 0, 0))
     vehicle_location = vehicle_transform.location
@@ -64,15 +64,19 @@ def draw_close_waypoints(display, map, vehicle_transform, radius, vehicle_width,
 
 def main():
     vehicle_bp = sim.blueprint_library.filter('vehicle.*')[0]
-    
-    spawn_point = carla.Transform(carla.Location(x=0, y=-60.899998, z=0.600000))
+    # spawn_point = carla.Transform(carla.Location(x=0, y=-60.899998, z=0.600000))
+    spawn_point = carla.Transform(carla.Location(x=30, y=-60.899998, z=0.600000))
     vehicle = sim.world.spawn_actor(vehicle_bp, spawn_point)
-
-    vehicle_bounding_box = vehicle.bounding_box 
+    vehicle_bounding_box = vehicle.bounding_box
     vehicle_width, vehicle_length = vehicle_bounding_box.extent.y * 2, vehicle_bounding_box.extent.x * 2
 
-    vehicle.set_autopilot(True)
-    
+    # 웨이포인트 목록 획득
+    map = sim.world.get_map()
+    start_waypoint = map.get_waypoint(vehicle.get_location())
+    target_waypoint = start_waypoint.next(100.0)[0]  # 100미터 떨어진 첫 번째 웨이포인트
+
+    vehicle_reached_target = False  # 차량이 목표에 도달했는지 확인하는 플래그
+
     try:
         while True:
             for event in pygame.event.get():
@@ -80,7 +84,20 @@ def main():
                     return
 
             vehicle_transform = vehicle.get_transform()
-            draw_close_waypoints(display, sim.world.get_map(), vehicle_transform, 10, vehicle_width, vehicle_length)
+            vehicle_location = vehicle_transform.location
+            target_location = target_waypoint.transform.location
+
+            # 목표 웨이포인트에 도달했는지 확인
+            if not vehicle_reached_target and math.sqrt((vehicle_location.x - target_location.x) ** 2 + (vehicle_location.y - target_location.y) ** 2) > 100:
+                vehicle.apply_control(carla.VehicleControl(throttle=0, brake=1.0))  # 정지
+                vehicle_reached_target = True  # 차량이 목표에 도달했음을 표시
+                print("Reached the target waypoint and stopped.")
+
+            if not vehicle_reached_target:
+                vehicle.apply_control(carla.VehicleControl(throttle=1.0))  # 일정한 속도로 직진
+
+            draw_close_waypoints(display, map, vehicle_transform, 10, vehicle_width, vehicle_length)
+            pygame.display.flip()
             clock.tick(30)
 
     finally:
