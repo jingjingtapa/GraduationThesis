@@ -1,4 +1,4 @@
-import carla
+import carla, math
 
 class initializer:
     def __init__(self):
@@ -22,4 +22,41 @@ class initializer:
         self.YELLOW = (255, 255, 0)
         self.DISPLAY_WIDTH = 800
         self.DISPLAY_HEIGHT = 600
-    
+
+    def pure_pursuit_control(self,vehicle, waypoints, lookahead_distance):
+        vehicle_transform = vehicle.get_transform()
+        vehicle_location = vehicle_transform.location
+        vehicle_yaw = math.radians(vehicle_transform.rotation.yaw)
+
+        # Find the nearest waypoint that is at least lookahead_distance away
+        closest_distance = float('inf')
+        closest_waypoint = None
+
+        for waypoint in waypoints:
+            distance = vehicle_location.distance(waypoint.transform.location)
+            if distance > lookahead_distance and distance < closest_distance:
+                closest_distance = distance
+                closest_waypoint = waypoint
+
+        if closest_waypoint is None:
+            return 0.0, 0.0  # No suitable waypoint found
+
+        # Calculate the target point relative to the vehicle's position
+        dx = closest_waypoint.transform.location.x - vehicle_location.x
+        dy = closest_waypoint.transform.location.y - vehicle_location.y
+
+        # Transform to the vehicle's coordinate system
+        transformed_x = dx * math.cos(-vehicle_yaw) - dy * math.sin(-vehicle_yaw)
+        transformed_y = dx * math.sin(-vehicle_yaw) + dy * math.cos(-vehicle_yaw)
+
+        # Calculate steering angle using Pure Pursuit
+        steering_angle = math.atan2(2 * transformed_y, lookahead_distance)
+
+        # Assume constant speed for simplicity (e.g., 15 m/s)
+        target_speed = 7.0
+        current_speed = vehicle.get_velocity().length()
+
+        # PID controller for speed
+        throttle = 0.5 * (target_speed - current_speed)
+
+        return steering_angle, throttle
