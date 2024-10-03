@@ -10,10 +10,9 @@ display = pygame.display.set_mode((sim.DISPLAY_WIDTH, sim.DISPLAY_HEIGHT), pygam
 pygame.display.set_caption('Vehicle Close Waypoints')
 clock = pygame.time.Clock()
 
-def draw_vehicle(display, vehicle_transform, vehicle_width, vehicle_length):
-    vehicle_heading = np.deg2rad(vehicle_transform.rotation.yaw)
+def draw_vehicle(display, vehicle_width, vehicle_length, vehicle_heading):
+    vehicle_heading = np.deg2rad(vehicle_heading)
     center_x, center_y= sim.DISPLAY_WIDTH // 2, sim.DISPLAY_HEIGHT // 2
-
     corners = []
     for dx, dy in [(-vehicle_length / 2, -vehicle_width / 2), (-vehicle_length / 2, vehicle_width / 2),
                    (vehicle_length / 2, vehicle_width / 2), (vehicle_length / 2, -vehicle_width / 2)]:
@@ -24,10 +23,8 @@ def draw_vehicle(display, vehicle_transform, vehicle_width, vehicle_length):
     pygame.draw.polygon(display, sim.BLUE, corners, 0) 
     pygame.draw.polygon(display, sim.YELLOW, corners, 3)
 
-def draw_close_waypoints(display, map, vehicle_transform, radius, vehicle_width, vehicle_length):
+def draw_close_waypoints(display, map, radius, vehicle_width, vehicle_length, vehicle_location, vehicle_heading):
     display.fill((0, 0, 0))
-    vehicle_location = vehicle_transform.location
-    vehicle_heading = vehicle_transform.rotation.yaw
 
     close_waypoints = map.generate_waypoints(vehicle_length)
     for waypoint in close_waypoints:
@@ -59,7 +56,7 @@ def draw_close_waypoints(display, map, vehicle_transform, radius, vehicle_width,
             pygame.draw.circle(display, sim.GREEN, (screen_left_x, screen_left_y), 5)
             pygame.draw.circle(display, sim.GREEN, (screen_right_x, screen_right_y), 5)
 
-    draw_vehicle(display, vehicle_transform, vehicle_width, vehicle_length)
+    draw_vehicle(display, vehicle_width, vehicle_length, vehicle_heading)
     pygame.display.flip()
 
 def main():
@@ -69,7 +66,7 @@ def main():
     vehicle = sim.world.spawn_actor(vehicle_bp, spawn_point)
 
     vehicle_bounding_box = vehicle.bounding_box 
-    vehicle_width, vehicle_length = vehicle_bounding_box.extent.y * 2, vehicle_bounding_box.extent.x * 2
+    v_width, v_length = vehicle_bounding_box.extent.y * 2, vehicle_bounding_box.extent.x * 2
 
     vehicle.set_autopilot(True)
     
@@ -79,8 +76,10 @@ def main():
                 if event.type == pygame.QUIT:
                     return
 
-            vehicle_transform = vehicle.get_transform()
-            draw_close_waypoints(display, sim.world.get_map(), vehicle_transform, 10, vehicle_width, vehicle_length)
+            vehicle_t = vehicle.get_transform()
+            v_location = vehicle_t.location
+            v_heading = vehicle_t.rotation.yaw
+            draw_close_waypoints(display, sim.world.get_map(), vehicle_t, 10, v_width, v_length, v_location, v_heading)
             clock.tick(30)
 
     finally:

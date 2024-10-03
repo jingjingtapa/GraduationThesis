@@ -1,4 +1,5 @@
 import carla, math
+import numpy as np
 
 class initializer:
     def __init__(self):
@@ -22,6 +23,16 @@ class initializer:
         self.YELLOW = (255, 255, 0)
         self.DISPLAY_WIDTH = 800
         self.DISPLAY_HEIGHT = 600
+
+    def attach_rear_camera(self, world, vehicle):
+        camera_transform = carla.Transform(carla.Location(x=-2, z=2.0), carla.Rotation(pitch=0, yaw=180, roll=0))
+        camera = world.spawn_actor(self.camera_bp, camera_transform, attach_to=vehicle)
+        return camera
+
+    def process_image(self,image):
+        image_data = np.frombuffer(image.raw_data, dtype=np.uint8)
+        image_data = np.reshape(image_data, (image.height, image.width, 4))
+        return image_data[:, :, :3][:, :, ::-1]
 
     def pure_pursuit_control(self,vehicle, waypoints, lookahead_distance):
         vehicle_transform = vehicle.get_transform()
