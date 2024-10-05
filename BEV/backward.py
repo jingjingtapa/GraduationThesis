@@ -103,7 +103,7 @@ def generate_direct_backward_mapping(
 
 def main():
     split = 'train'
-    wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval = 7, 30, 0.05, -10, 10, 0.05
+    wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval = 7, 40, 0.05, -10, 10, 0.05
     bev_height, bev_width = int((wx_max-wx_min)/wx_interval), int((wy_max-wy_min)/wy_interval)
     dir_download = '/home/jingjingtapa/다운로드'
     dir_image = f'{dir_download}/leftImg8bit/{split}'
@@ -159,8 +159,9 @@ def main():
             cnt_image = (cnt_image + 1) % len(image_list)
         elif key == ord('b') and cnt_image >= 1:
             cnt_image = (cnt_image - 1) % len(image_list)
-        # elif key == ord('c') and cnt_city <= len(city_list) - 2:
-        #     cnt_city = (cnt_city + 1) % len(city_list)
+        elif key == ord('c') and cnt_city <= len(city_list) - 2:
+            cnt_city = (cnt_city + 1) % len(city_list)
+            cnt_image = 0
         elif key == ord('q'): 
             break
 
