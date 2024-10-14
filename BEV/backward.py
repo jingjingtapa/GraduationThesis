@@ -153,7 +153,7 @@ def main():
                     cv2.circle(bev_image, (u, v), 2, (255, 255, 0), -1, cv2.LINE_AA)
 
         cv2.imshow('BEV',bev_image)
-        cv2.imshow('original', image)
+        # cv2.imshow('original', image)
         key = cv2.waitKey(0)
         if key == ord('n') and cnt_image <= len(image_list) - 2:
             cnt_image = (cnt_image + 1) % len(image_list)

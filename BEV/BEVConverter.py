@@ -1,6 +1,6 @@
 from cityscapesscripts.helpers.box3dImageTransform import Camera,Box3dImageTransform, CRS_V, CRS_C, CRS_S
 from cityscapesscripts.helpers.annotation import CsBbox3d
-import cv2, json, os
+import cv2, json, os, math
 import numpy as np
 
 class BEVConverter:
@@ -124,12 +124,22 @@ class BEVConverter:
             obj.fromJsonText(object)
             box3d_annotation.initialize_box_from_annotation(obj, coordinate_system=CRS_V)
             box_vertices_C = box3d_annotation.get_vertices(coordinate_system=CRS_C)
+            bottom_vertice = dict()
             for loc, pv_coord in box_vertices_C.items():
-                object = dict()
-                if loc in ['FLB', 'FRB', 'BLB', 'BRB']:           
-                    u, v = int(0.5*bev_width - (pv_coord[1])/self.wy_interval), int(bev_height - (pv_coord[0] - self.wx_min)/self.wx_interval)
-                    object[loc] = [u,v]
-            bev_objects.append(object)
+                if loc in ['FRB', 'FLB', 'BLB', 'BRB']:
+                    bottom_vertice[loc] = [pv_coord[0],pv_coord[1]]
+                # class, x_center, y_center, width, height
+                if object['label'] == 'car': cls = 1
+                else: cls = 0
+            
+            width = int((math.sqrt((bottom_vertice['FLB'][0]-bottom_vertice['FRB'][0])**2 + (bottom_vertice['FLB'][1]-bottom_vertice['FRB'][1])**2))/self.wy_interval)
+            height = int((math.sqrt((bottom_vertice['FRB'][0]-bottom_vertice['BRB'][0])**2 + (bottom_vertice['FRB'][1]-bottom_vertice['BRB'][1])**2))/self.wx_interval)
+            center_vx, center_vy = int((bottom_vertice['FRB'][0]+bottom_vertice['BLB'][0])/2), int((bottom_vertice['FRB'][1]+bottom_vertice['BLB'][1])/2)
+            center_ux, center_uy = int(0.5*bev_width - center_vy/self.wy_interval), int(bev_height - (center_vx - self.wx_min)/self.wx_interval)
+            
+            if center_ux >= 0 and center_uy >= 0:                              
+                # bev_objects.append([cls, center_ux, center_uy, width, height])
+                bev_objects.append([cls, bottom_vertice['FLB'][0], bottom_vertice['FLB'][1], bottom_vertice['BRB'][0], bottom_vertice['BRB'][1]])
 
         return bev_image, bev_objects
     
