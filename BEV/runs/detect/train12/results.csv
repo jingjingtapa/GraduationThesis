@@ -1,0 +1,8 @@
+epoch,time,train/box_loss,train/cls_loss,train/dfl_loss,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B),val/box_loss,val/cls_loss,val/dfl_loss,lr/pg0,lr/pg1,lr/pg2
+1,0.726182,nan,nan,nan,0.72545,0.63333,0.6158,0.45791,nan,nan,nan,0,0,0
+2,1.34825,nan,nan,nan,0.73184,0.63333,0.61331,0.45886,nan,nan,nan,1.17822e-06,1.17822e-06,1.17822e-06
+3,1.97355,nan,nan,nan,0.74672,0.63333,0.60588,0.45613,nan,nan,nan,2.33288e-06,2.33288e-06,2.33288e-06
+4,2.49671,nan,nan,nan,0.73578,0.63333,0.6132,0.45704,nan,nan,nan,3.46397e-06,3.46397e-06,3.46397e-06
+5,3.02694,nan,nan,nan,0.72303,0.63157,0.62216,0.46251,nan,nan,nan,4.5715e-06,4.5715e-06,4.5715e-06
+6,3.56814,nan,nan,nan,0.70044,0.63333,0.62552,0.46349,nan,nan,nan,5.65548e-06,5.65548e-06,5.65548e-06
+7,4.10967,nan,nan,nan,0.68624,0.63333,0.62516,0.46187,nan,nan,nan,6.71588e-06,6.71588e-06,6.71588e-06

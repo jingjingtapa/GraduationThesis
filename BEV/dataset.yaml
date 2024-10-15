@@ -1,0 +1,11 @@
+train: /home/jingjingtapa/다운로드/dataset/train/images
+val: /home/jingjingtapa/다운로드/dataset/val/images
+# test: /path/to/dataset/images/test
+
+# num of class
+nc: 2
+
+# class names
+names:
+  0: other
+  1: car
