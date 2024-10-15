@@ -157,10 +157,10 @@ def tutorial(args):
         vehicle.set_autopilot(True)
 
         # Front camera
-        front_camera = world.spawn_actor(camera_bp, transform=carla.Transform(carla.Location(x=1.6, z=10), carla.Rotation(pitch = -90)), attach_to=vehicle)
+        front_camera = world.spawn_actor(camera_bp, transform=carla.Transform(carla.Location(x=1.6, z=1.6), carla.Rotation(pitch = -45)), attach_to=vehicle)
 
         # Rear camera
-        rear_camera = world.spawn_actor(camera_bp, transform=carla.Transform(carla.Location(x=-1.6, z=10), carla.Rotation(yaw=180, pitch = -90)), attach_to=vehicle)
+        rear_camera = world.spawn_actor(camera_bp, transform=carla.Transform(carla.Location(x=-1.6, z=1.6), carla.Rotation(yaw=180, pitch = -45)), attach_to=vehicle)
 
         # Create queues for storing camera data
         front_image_queue = Queue()
