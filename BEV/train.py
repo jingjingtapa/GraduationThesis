@@ -9,4 +9,4 @@ model = YOLO('yolo11n-obb.pt')
 
 wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval = 7, 40, 0.05, -10, 10, 0.05
 
-model.train(data = 'dataset.yaml', epochs = 5, imgsz=640)
+model.train(data = 'dataset.yaml', epochs = 100, imgsz=640)
