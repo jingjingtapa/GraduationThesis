@@ -1,5 +1,14 @@
-import carla, random
+import carla, random, time
 import numpy as np
+
+def clear_existing_vehicles(world):
+    """
+    Remove all vehicles currently in the world.
+    """
+    actors = world.get_actors().filter('vehicle.*')  # 모든 차량 필터링
+    for actor in actors:
+        actor.destroy()  # 모든 차량 제거
+    print(f"Removed {len(actors)} vehicles from the map.")
 
 def get_bounding_box_world_coords(vehicle):
     """
@@ -38,19 +47,30 @@ def transform_to_ego_coords(vertices_world, ego_inverse_matrix):
 
 def spawn_vehicles(world, blueprint_library, num_vehicles):
     """
-    Spawn multiple vehicles at random spawn points.
+    Spawn multiple vehicles at random spawn points, ensuring fire trucks and ambulances are included.
     """
     spawn_points = world.get_map().get_spawn_points()
     vehicles_list = []
-    
-    for i in range(num_vehicles):
+
+    # 먼저 소방차와 구급차를 꼭 스폰
+    emergency_vehicles = ['vehicle.*firetruck', 'vehicle.*ambulance']
+    for emergency in emergency_vehicles:
+        vehicle_bp = random.choice(blueprint_library.filter(emergency))
+        spawn_point = random.choice(spawn_points)
+        vehicle = world.try_spawn_actor(vehicle_bp, spawn_point)
+        if vehicle:
+            vehicle.set_autopilot(True)
+            vehicles_list.append(vehicle)
+
+    # 남은 차량을 랜덤으로 스폰
+    for i in range(num_vehicles - len(emergency_vehicles)):
         vehicle_bp = random.choice(blueprint_library.filter('vehicle.*'))
         spawn_point = random.choice(spawn_points)
         vehicle = world.try_spawn_actor(vehicle_bp, spawn_point)
         if vehicle:
-            vehicle.set_autopilot(True)  # Enable autopilot for spawned vehicles
+            vehicle.set_autopilot(True)
             vehicles_list.append(vehicle)
-    
+
     return vehicles_list
 
 def main():
@@ -59,6 +79,8 @@ def main():
     
     world = client.get_world()
     
+    clear_existing_vehicles(world)
+
     # Ego vehicle spawn
     blueprint_library = world.get_blueprint_library()
     ego_vehicle_bp = blueprint_library.filter('vehicle.lincoln.mkz_2017')[0]
@@ -72,6 +94,7 @@ def main():
     try:
         while True:
             world.tick()
+            time.sleep(0.05)
 
             # Ego 차량의 변환 행렬
             ego_transform = ego_vehicle.get_transform()
@@ -90,10 +113,10 @@ def main():
                     distance = ego_location.distance(vehicle_location)
 
                     # 반경 10m 이내의 차량만 처리
-                    if distance <= 10:
+                    if distance <= 20:
                         bbox_world_coords = get_bounding_box_world_coords(vehicle)
                         bbox_ego_coords = transform_to_ego_coords(bbox_world_coords, ego_inverse_matrix)
-                        print(f"Vehicle {vehicle.id} (distance {distance:.2f}m) Bounding Box in Ego Coordinates: {bbox_ego_coords}")
+                        print(f"Vehicle {vehicle.type_id} (distance {distance:.2f}m) Bounding Box in Ego Coordinates: {bbox_ego_coords}")
 
     finally:
         print("Cleaning up vehicles...")
@@ -101,6 +124,7 @@ def main():
         for vehicle in traffic_vehicles:
             vehicle.destroy()
         print("Simulation ended.")
+        time.sleep(1)
 
 if __name__ == '__main__':
     main()
