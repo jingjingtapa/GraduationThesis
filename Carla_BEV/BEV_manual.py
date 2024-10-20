@@ -31,23 +31,38 @@ def shift_image(image, x_shift):
     shifted_image = cv2.warpAffine(image, translation_matrix, (width, height))
     return shifted_image
 
+def process_keyboard(vehicle):
+    """
+    키보드를 통한 수동 제어.
+    """
+    keys = pygame.key.get_pressed()
+
+    if keys[pygame.K_UP]:
+        vehicle.apply_control(carla.VehicleControl(throttle=0.5))
+    elif keys[pygame.K_DOWN]:
+        vehicle.apply_control(carla.VehicleControl(brake=0.5))
+    elif keys[pygame.K_LEFT]:
+        vehicle.apply_control(carla.VehicleControl(steer=-0.5))
+    elif keys[pygame.K_RIGHT]:
+        vehicle.apply_control(carla.VehicleControl(steer=0.5))
+    else:
+        vehicle.apply_control(carla.VehicleControl(throttle=0.0, steer=0.0))
+
 def tutorial(args):
     """
-    이 함수는 전면 및 후면 카메라 데이터를 동기적으로 받아와 BEV 변환 후 실시간으로 Pygame을 통해 시각화하고,
-    자유로운 교통량을 추가합니다.
+    이 함수는 전면 및 후면 카메라 데이터를 받아와 BEV 변환 후 실시간으로 Pygame을 통해 시각화하고,
+    수동 제어가 가능하도록 수정된 코드입니다.
     """
     # Pygame 초기화
     pygame.init()
     display = pygame.display.set_mode((args.width, args.height * 2), pygame.HWSURFACE | pygame.DOUBLEBUF)
+    clock = pygame.time.Clock()
 
     # 서버에 연결
     client = carla.Client(args.host, args.port)
     client.set_timeout(2.0)
     world = client.get_world()
     bp_lib = world.get_blueprint_library()
-
-    traffic_manager = client.get_trafficmanager(8000)
-    traffic_manager.set_synchronous_mode(True)
 
     original_settings = world.get_settings()
     settings = world.get_settings()
@@ -58,7 +73,7 @@ def tutorial(args):
     vehicle = None
     front_camera = None
     rear_camera = None
-    traffic_vehicles = []  # 교통 차량을 저장할 리스트
+    traffic_vehicles = []
 
     try:
         # 차량 및 카메라 블루프린트 설정
@@ -71,7 +86,6 @@ def tutorial(args):
         vehicle = world.spawn_actor(
             blueprint=vehicle_bp,
             transform=world.get_map().get_spawn_points()[0])
-        vehicle.set_autopilot(True)
 
         # 전면 카메라 설정
         front_camera = world.spawn_actor(
@@ -94,13 +108,13 @@ def tutorial(args):
         rear_camera.listen(lambda data: sensor_callback(data, rear_image_queue))
 
         # BEV 변환을 위한 소스 및 목적지 좌표 정의
-        src_points = np.float32([[150, 300], [550, 300], [50, 400], [650, 400]])
-        dst_points = np.float32([[200, 0], [520, 0], [200, 720], [520, 720]])
+        src_points = np.float32([[100, 250], [580, 250], [50, 400], [650, 400]])
 
-        # 자유로운 교통량 생성
+	# dst_points: 변환된 이미지에서 나타낼 좌표 (더 넓은 영역에 해당하는 변환 좌표 설정)
+        dst_points = np.float32([[150, 0], [600, 0], [150, 720], [600, 720]])
         traffic_blueprints = bp_lib.filter("vehicle.*")  # 모든 차량 블루프린트를 가져옴
         spawn_points = world.get_map().get_spawn_points()
-        num_traffic_vehicles = 50  # 스폰할 교통 차량 수
+        num_traffic_vehicles = 30  # 스폰할 교통 차량 수
 
         for _ in range(num_traffic_vehicles):
             traffic_vehicle_bp = np.random.choice(traffic_blueprints)
@@ -118,6 +132,9 @@ def tutorial(args):
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
+
+            # 차량을 키보드로 수동 제어
+            process_keyboard(vehicle)
 
             try:
                 front_image_data = front_image_queue.get(True, 1.0)
@@ -155,6 +172,9 @@ def tutorial(args):
             display.blit(surface, (0, 0))
             pygame.display.flip()
 
+            # FPS를 60으로 유지
+            clock.tick(60)
+
     finally:
         # 원래 설정 복구 및 리소스 정리
         world.apply_settings(original_settings)
@@ -168,12 +188,10 @@ def tutorial(args):
             traffic_vehicle.destroy()
         pygame.quit()
 
-
-
 def main():
     """메인 함수"""
     argparser = argparse.ArgumentParser(
-        description='CARLA Front and Rear Camera BEV 실시간 시각화')
+        description='CARLA Front and Rear Camera BEV 실시간 시각화 및 수동 제어')
     argparser.add_argument(
         '--host',
         metavar='H',
@@ -202,5 +220,4 @@ def main():
 
 if __name__ == '__main__':
     main()
-
 
