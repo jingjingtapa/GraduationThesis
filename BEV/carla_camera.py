@@ -12,8 +12,8 @@ bev = BEVConverter(wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval)
 pygame.init()
 
 # Pygame 디스플레이 설정
-screen_width = 640 * 2
-screen_height = 480 * 2
+screen_width = int((wy_max-wy_min)/wy_interval)
+screen_height = int((wx_max-wx_min)/wx_interval)*2
 screen = pygame.display.set_mode((screen_width, screen_height))
 
 # 카메라 설정
@@ -41,15 +41,15 @@ def extrinsic(t):
     sc, ss = si * ck, si * sk
 
     R = np.identity(4)
-    R[0, 0] = cj * ck
-    R[0, 1] = sj * sc - cs
-    R[0, 2] = sj * cc + ss
-    R[1, 0] = cj * sk
-    R[1, 1] = sj * ss + cc
-    R[1, 2] = sj * cs - sc
-    R[2, 0] = -sj
-    R[2, 1] = cj * si
-    R[2, 2] = cj * ci
+    # R[0, 0] = cj * ck
+    # R[0, 1] = sj * sc - cs
+    # R[0, 2] = sj * cc + ss
+    # R[1, 0] = cj * sk
+    # R[1, 1] = sj * ss + cc
+    # R[1, 2] = sj * cs - sc
+    # R[2, 0] = -sj
+    # R[2, 1] = cj * si
+    # R[2, 2] = cj * ci
     R[0, 3], R[1, 3], R[2, 3] = -x, -y, -z
 
     r = np.array([[0., -1., 0., 0.],
@@ -70,25 +70,22 @@ blueprint_library = world.get_blueprint_library()
 vehicle_bp = blueprint_library.filter('vehicle.*')[0]
 spawn_point = world.get_map().get_spawn_points()[0]
 vehicle = world.spawn_actor(vehicle_bp, spawn_point)
+
+# 차량의 물리 파라미터 설정을 가져오기
+vehicle_physics_control = vehicle.get_physics_control()
+
+# 서스펜션 강도와 댐퍼 값을 조정하여 피칭을 줄임
+for wheel in vehicle_physics_control.wheels:
+    wheel.suspension_stiffness = 100.0  # 서스펜션을 더 강하게 설정
+    wheel.wheel_damping_rate = 0.2  # 댐퍼 값을 낮게 설정하여 흔들림 줄이기
+
+# 차량의 질량 중심을 낮게 설정하여 피칭을 줄임
+vehicle_physics_control.center_of_mass = carla.Vector3D(0.0, 0.0, -0.5)  # Z축을 낮게 설정하여 무게중심을 아래로 내림
+
+# 새로운 물리 파라미터를 차량에 적용
+vehicle.apply_physics_control(vehicle_physics_control)
+
 vehicle.set_autopilot(True)
-
-# IMU 센서 부착 함수 정의
-def attach_imu(vehicle, transform):
-    imu_bp = blueprint_library.find('sensor.other.imu')
-    imu_transform = carla.Transform(carla.Location(x=transform[0], y=transform[1], z=transform[2]))
-    imu = world.spawn_actor(imu_bp, imu_transform, attach_to=vehicle)
-    return imu
-
-# IMU 데이터 처리 콜백 함수 (피칭 값 수집)
-def imu_callback(imu_data):
-    global pitch_rate
-    pitch_rate = imu_data.gyroscope.y  # 자이로스코프의 y축 값이 피칭율
-    print(f"Pitch rate (gyroscope Y-axis): {pitch_rate}")
-
-# IMU 센서 부착 및 콜백 함수 등록
-imu_transform = [0.0, 0.0, 1.0]  # 차량의 중심에 부착
-imu_sensor = attach_imu(vehicle, imu_transform)
-imu_sensor.listen(lambda imu_data: imu_callback(imu_data))
 
 # 카메라 부착 함수 정의
 def attach_camera(vehicle, transform, fov=FOV):
@@ -112,19 +109,15 @@ map_x, map_y, bev_height, bev_width = bev.generate_direct_backward_mapping(wx_mi
                                                                            wy_min, wy_max, wy_interval,
                                                                            R, K)
 
-print(len(map_x))
 # 각 카메라에서 받은 데이터를 화면에 그리기 위한 배열
 image_front = np.zeros((bev_height, bev_width, 3), dtype=np.uint8)
 
 # 콜백 함수: 카메라로부터 받은 이미지 처리
 def process_image(image, image_type):
-
-    global pitch_rate
     array = np.frombuffer(image.raw_data, dtype=np.uint8)
     array = np.reshape(array, (image.height, image.width, 4))
     array = array[:, :, :3]  # BGR만 추출
     array = cv2.remap(array, map_x, map_y, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT)
-    cv2.imwrite('img.png', array)
     array = array[:, :, ::-1]  # BGR -> RGB 변환
     if image_type == 'front':
         global image_front
@@ -154,6 +147,5 @@ while running:
 
 # 종료 시 actor 정리
 front_camera.stop()
-imu_sensor.stop()
 vehicle.destroy()
 pygame.quit()

@@ -83,6 +83,7 @@ class BEVConverter:
         
         map_x = np.zeros((output_height, output_width)).astype(np.float32)
         map_y = np.zeros((output_height, output_width)).astype(np.float32)
+    
         
         world_z = 0
         for i, world_x in enumerate(world_x_coords):
@@ -93,14 +94,12 @@ class BEVConverter:
                 uv_coord = intrinsic[:3, :3] @ camera_coord # 3*3 * 3*1 = 3*1
                 uv_coord /= uv_coord[2]
 
-                # uv_coord = motion_cancel_mat @ uv_coord
-
                 map_x[i][j] = uv_coord[0]
                 map_y[i][j] = uv_coord[1]
                 
         return map_x, map_y, output_height, output_width
         
     def get_BEV_image(self, image, map_x, map_y):
-        bev_image = cv2.remap(image, map_x, map_y, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT)
+        bev_image = cv2.remap(image, map_x, map_y, cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT)
         return bev_image
     
