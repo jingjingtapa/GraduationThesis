@@ -49,8 +49,8 @@ def extrinsic(t):
 # Carla 시뮬레이터와 연결
 client = carla.Client('localhost', 2000)
 client.set_timeout(10.0)
-world = client.get_world()
-
+# world = client.get_world()
+world = client.load_world('Town04')
 # Ego 차량 스폰 및 카메라 부착
 blueprint_library = world.get_blueprint_library()
 vehicle_bp = blueprint_library.filter('vehicle.*')[0]
