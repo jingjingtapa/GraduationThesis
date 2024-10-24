@@ -1,0 +1,4 @@
+BEV_manual_save.py -> 잘됨
+BEV_save_coord.py pygame 시각화 안됨 -> 이미지랑 좌표 같이 저장하는 파일 -> BEV_manual_save랑 비교하면서 보기
+motion cancellation -> imu roll, pitch yaw 방향 반대로 하는 방법으로는 안됨 -> 일단 서스펜션이랑 댐퍼 계수 조절로 하기
+BEV_save_coord 수정해서 dataset확보
