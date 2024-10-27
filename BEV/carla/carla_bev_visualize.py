@@ -223,7 +223,6 @@ while running:
     front_rear_surface = pygame.image.fromstring(front_rear_combined.tobytes(), front_rear_combined.size, "RGBA")
     left_right_surface = pygame.image.fromstring(left_right_combined.tobytes(), left_right_combined.size, "RGBA")
     
-    
     screen.blit(front_rear_surface, (0, 0))
     screen.blit(left_right_surface, (0, 400))
 
