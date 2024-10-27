@@ -1,20 +1,10 @@
 import carla
 import pygame
 import numpy as np
-import cv2
+import cv2, sys, os
+from PIL import Image
+sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 from hist.BEVConverter import BEVConverter
-
-wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval = 7, 40, 0.05, -10, 10, 0.05
-
-bev = BEVConverter(wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval)
-
-# Pygame 초기화
-pygame.init()
-
-# Pygame 디스플레이 설정
-screen_width = int((wy_max - wy_min) / wy_interval)
-screen_height = int((wx_max - wx_min) / wx_interval) * 2
-screen = pygame.display.set_mode((screen_width, screen_height))
 
 # 카메라 설정
 CAMERA_WIDTH = 640
@@ -46,99 +36,143 @@ def extrinsic(t):
     RT = r @ R
     return RT
 
-# Carla 시뮬레이터와 연결
+def convert_black_to_transparent(cv_image):
+    pil_image = Image.fromarray(cv_image).convert('RGBA')
+    datas = pil_image.getdata()
+    new_data = []
+    for item in datas:
+        if item[:3] == (0,0,0):
+            new_data.append((0, 0, 0, 0))
+        else:
+            new_data.append(item)
+    
+    pil_image.putdata(new_data)
+    return pil_image
+
 client = carla.Client('localhost', 2000)
 client.set_timeout(10.0)
-# world = client.get_world()
-world = client.load_world('Town04')
+world = client.get_world()
+# world = client.load_world('Town01')
+
+actors = world.get_actors().filter('vehicle.*')
+for actor in actors:
+    actor.destroy()
+
 # Ego 차량 스폰 및 카메라 부착
 blueprint_library = world.get_blueprint_library()
 vehicle_bp = blueprint_library.filter('vehicle.*')[0]
 spawn_point = world.get_map().get_spawn_points()[0]
 vehicle = world.spawn_actor(vehicle_bp, spawn_point)
+vehicle.set_autopilot(True)
 
-# 차량의 물리 파라미터 가져오기 (차량 길이 계산)
-vehicle_physics_control = vehicle.get_physics_control()
-vehicle_dimensions = vehicle_physics_control.wheels[0].position - vehicle_physics_control.wheels[2].position
-vehicle_length = abs(vehicle_dimensions.x)
+physics_control = vehicle.get_physics_control()
+physics_control.center_of_mass.z = -0.5 # 무게 중심 낮추기
+for wheel in physics_control.wheels: # 서스펜션 강도 및 댐핑 조정, 타이어 마찰 계수 조정
+    wheel.suspension_stiffness = 100.0
+    wheel.damping_rate = 1.0
+    wheel.tire_friction = 3.0
 
-# 차량의 실제 길이를 wx_interval로 나눈 픽셀 간격 계산
-pixel_gap = int(vehicle_length / wx_interval)
+vehicle.apply_physics_control(physics_control) # 변경된 물리 속성 적용
+
+length, width = vehicle.bounding_box.extent.x*2, vehicle.bounding_box.extent.y*2
+wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval = int(length/2), 30, 0.05, -10, 10, 0.05
+bev = BEVConverter(wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval)
+
+pygame.init()
+screen_width = int((wy_max - wy_min) / wy_interval)
+screen_height = int(((wx_max - wx_min) / wx_interval)*2 + wx_min/wx_interval * 2)
+screen = pygame.display.set_mode((screen_width, screen_height))
+
+def attach_camera(vehicle, transform, fov=FOV):
+    camera_bp = blueprint_library.find('sensor.camera.rgb')
+    camera_bp.set_attribute('image_size_x', f'{CAMERA_WIDTH}')
+    camera_bp.set_attribute('image_size_y', f'{CAMERA_HEIGHT}')
+    camera_bp.set_attribute('fov', f'{fov}')
+    camera_transform = carla.Transform(carla.Location(x=transform[0], y=transform[1], z=transform[2]),
+                                       carla.Rotation(pitch=transform[3], yaw=transform[4], roll=transform[5]))
+    camera = world.spawn_actor(camera_bp, camera_transform, attach_to=vehicle)
+    return camera
 
 # 카메라 부착 (전방 카메라)
-front_transform = [2.0, 0.0, 1.5, 0.0, 0.0, 0.0]
-front_camera = attach_camera(vehicle, front_transform)
+cz = 2.3
+front_transform = [0.0, 0.0, cz, 0.0, 0.0, 0.0]
+rear_transform = [0.0, 0.0, cz, 0.0, 180.0, 0.0]
+left_transform = [0.0, 0.0, cz, 0.0, -90.0, 0.0]
+right_transform = [0.0, 0.0, cz, 0.0, 90.0, 0.0]
 
-# 카메라 부착 (후방 카메라)
-rear_transform = [-2.0, 0.0, 1.5, 0.0, 180.0, 0.0]
+front_camera = attach_camera(vehicle, front_transform)
 rear_camera = attach_camera(vehicle, rear_transform)
+left_camera = attach_camera(vehicle, left_transform)
+right_camera = attach_camera(vehicle, right_transform)
 
 K = intrinsic(CAMERA_WIDTH, CAMERA_HEIGHT, FOV)
-R_front = extrinsic(front_transform)
-R_rear = extrinsic(rear_transform)
+R = extrinsic(front_transform)
 
-map_x_front, map_y_front, bev_height, bev_width = bev.generate_direct_backward_mapping(wx_min, wx_max, wx_interval,
-                                                                                      wy_min, wy_max, wy_interval,
-                                                                                      R_front, K)
+map_x_front, map_y_front, bev_height, bev_width = bev.generate_direct_backward_mapping(wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval,R, K)
+map_x_rear, map_y_rear, _, _ = bev.generate_direct_backward_mapping(wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval, R, K)
 
-map_x_rear, map_y_rear, _, _ = bev.generate_direct_backward_mapping(wx_min, wx_max, wx_interval,
-                                                                    wy_min, wy_max, wy_interval,
-                                                                    R_rear, K)
+map_x_left, map_y_left, bev_left_height, bev_left_width = bev.generate_direct_backward_mapping(int(width/2), wy_max, wy_interval, -10, 10, wx_interval, R, K)
+map_x_right, map_y_right, _, _ = bev.generate_direct_backward_mapping(int(width/2), wy_max, wy_interval, -10, 10, wx_interval, R, K)
 
-# 각 카메라에서 받은 데이터를 화면에 그리기 위한 배열
 image_front = np.zeros((bev_height, bev_width, 3), dtype=np.uint8)
 image_rear = np.zeros((bev_height, bev_width, 3), dtype=np.uint8)
+image_left = np.zeros((bev_left_width, bev_left_height, 3), dtype=np.uint8)
+image_right = np.zeros((bev_left_width, bev_left_height, 3), dtype=np.uint8)
 
-# 콜백 함수: 카메라로부터 받은 이미지 처리
 def process_image(image, image_type):
-    array = np.frombuffer(image.raw_data, dtype=np.uint8)
-    array = np.reshape(array, (image.height, image.width, 4))
-    array = array[:, :, :3]  # BGR만 추출
+    array = np.frombuffer(image.raw_data, dtype=np.uint8).reshape((image.height, image.width, 4))[:, :, :3]  # BGR
+    bev_image = None
     if image_type == 'front':
-        bev_image = cv2.remap(array, map_x_front, map_y_front, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT)
-        bev_image = bev_image[:, :, ::-1]  # BGR -> RGB 변환
-        global image_front
-        image_front = bev_image
-    
+        bev_image = cv2.remap(array, map_x_front, map_y_front, cv2.INTER_NEAREST)
     elif image_type == 'rear':
-        bev_image = cv2.remap(array, map_x_rear, map_y_rear, cv2.INTER_NEAREST, borderMode=cv2.BORDER_CONSTANT)
-        bev_image = bev_image[:, :, ::-1]  # BGR -> RGB 변환
-
-        # 후방 이미지를 전방 이미지와 같은 크기로 맞춤 (리사이즈)
-        if bev_image.shape != image_front.shape:
-            bev_image = cv2.resize(bev_image, (image_front.shape[1], image_front.shape[0]))
-
-        global image_rear
-        image_rear = bev_image
+        bev_image = cv2.remap(array, map_x_rear, map_y_rear, cv2.INTER_NEAREST)
+    elif image_type == 'left':
+        bev_image = cv2.rotate(cv2.remap(array, map_x_left, map_y_left, cv2.INTER_NEAREST), cv2.ROTATE_90_COUNTERCLOCKWISE)
+    elif image_type == 'right':
+        bev_image = cv2.rotate(cv2.remap(array, map_x_right, map_y_right, cv2.INTER_NEAREST), cv2.ROTATE_90_CLOCKWISE)
+    
+    if bev_image is not None:
+        globals()[f"image_{image_type}"] = cv2.cvtColor(bev_image, cv2.COLOR_BGR2RGB)  # BGR -> RGB 변환
 
 # 콜백 함수 등록
 front_camera.listen(lambda image: process_image(image, 'front'))
 rear_camera.listen(lambda image: process_image(image, 'rear'))
+left_camera.listen(lambda image: process_image(image, 'left'))
+right_camera.listen(lambda image: process_image(image, 'right'))
 
-# Pygame을 통한 실시간 시각화 루프
 running = True
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
 
-    # 화면 초기화
+    front_pil = convert_black_to_transparent(image_front)
+    rear_pil = convert_black_to_transparent(cv2.flip(image_rear,-1))
+    left_pil = convert_black_to_transparent(image_left)
+    right_pil = convert_black_to_transparent(image_right)
+
+    vertical_padding = Image.new("RGBA", (front_pil.width, int(wx_min / wx_interval * 2)), (0, 0, 0, 0))
+    front_rear_combined = Image.new("RGBA", (front_pil.width, front_pil.height + rear_pil.height + vertical_padding.height), (0, 0, 0, 0))
+    front_rear_combined.paste(front_pil, (0, 0))
+    front_rear_combined.paste(vertical_padding, (0, front_pil.height))
+    front_rear_combined.paste(rear_pil, (0, front_pil.height + vertical_padding.height))
+
+    # 좌우 이미지 결합
+    horizontal_padding = Image.new("RGBA", (0, left_pil.height), (0, 0, 0, 0))
+    left_right_combined = Image.new("RGBA", (left_pil.width + right_pil.width + horizontal_padding.width, left_pil.height), (0, 0, 0, 0))
+    left_right_combined.paste(left_pil, (0, 0))
+    left_right_combined.paste(horizontal_padding, (left_pil.width, 0))
+    left_right_combined.paste(right_pil, (left_pil.width + horizontal_padding.width, 0))
+
+    # Pygame Surface로 변환하여 화면에 표시
+    front_rear_surface = pygame.image.fromstring(front_rear_combined.tobytes(), front_rear_combined.size, "RGBA")
+    left_right_surface = pygame.image.fromstring(left_right_combined.tobytes(), left_right_combined.size, "RGBA")
+    
     screen.fill((0, 0, 0))
-
-    # 전방과 후방 카메라 이미지 결합 (차량 길이만큼 띄워서)
-    if image_front is not None and image_front.size > 0 and image_rear is not None and image_rear.size > 0:
-        # 후방 이미지를 상하좌우 모두 뒤집기
-        image_rear_flipped = cv2.flip(image_rear, -1)  # 상하좌우 반전
-
-        # 차량 길이에 해당하는 픽셀만큼의 간격을 추가하여 결합
-        padding = np.zeros((pixel_gap, image_front.shape[1], 3), dtype=np.uint8)
-        combined_image = np.vstack((image_front, padding, image_rear_flipped))
-
-        # Pygame에서 렌더링할 수 있도록 변환
-        surface = pygame.surfarray.make_surface(combined_image.swapaxes(0, 1))
-        screen.blit(surface, (0, 0))
-
+    screen.blit(front_rear_surface, (0, 0))
+    screen.blit(left_right_surface, (0, 400))
     pygame.display.flip()
+
 
 # 종료 시 actor 정리
 front_camera.stop()
