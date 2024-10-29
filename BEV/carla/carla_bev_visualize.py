@@ -9,6 +9,9 @@ CAMERA_WIDTH = 640
 CAMERA_HEIGHT = 480
 FOV = 90
 
+num_vehicles = 30
+sampling_time=0.1 # tick : 20Hz
+
 def intrinsic(camera_width, camera_height, fov):
     f_x = camera_width / (2 * np.tan(np.radians(fov / 2)))
     f_y = f_x
@@ -60,6 +63,11 @@ def spawn_vehicles(world, blueprint_library, num_vehicles):
 client = carla.Client('localhost', 2000)
 client.set_timeout(10.0)
 world = client.get_world()
+
+settings = world.get_settings()
+settings.synchronous_mode = True
+settings.fixed_delta_seconds = sampling_time
+world.apply_settings(settings)
 # world = client.load_world('Town01')
 
 actors = world.get_actors().filter('vehicle.*')
@@ -76,14 +84,13 @@ ego_vehicle.set_autopilot(True)
 physics_control = ego_vehicle.get_physics_control()
 physics_control.center_of_mass.z = -0.5 # 무게 중심 낮추기
 for wheel in physics_control.wheels: # 서스펜션 강도 및 댐핑 조정, 타이어 마찰 계수 조정
-    wheel.suspension_stiffness = 100.0
-    wheel.damping_rate = 1.0
+    wheel.suspension_stiffness = 10000.0
+    wheel.damping_rate = 0.01
     wheel.tire_friction = 3.0
 
 ego_vehicle.apply_physics_control(physics_control) # 변경된 물리 속성 적용
 length, width = ego_vehicle.bounding_box.extent.x*2, ego_vehicle.bounding_box.extent.y*2
 
-num_vehicles = 10
 traffic_vehicles = spawn_vehicles(world, blueprint_library, num_vehicles)
 
 wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval = int(length/2), 30, 0.05, -10, 10, 0.05
@@ -94,10 +101,11 @@ screen_width = int((wy_max - wy_min) / wy_interval)
 screen_height = int(((wx_max - wx_min) / wx_interval)*2 + wx_min/wx_interval * 2)
 screen = pygame.display.set_mode((screen_width, screen_height))
 
-def attach_camera(vehicle, transform, fov=FOV):
+def attach_camera(vehicle, transform, sampling_time, fov=FOV):
     camera_bp = blueprint_library.find('sensor.camera.rgb')
     camera_bp.set_attribute('image_size_x', f'{CAMERA_WIDTH}')
     camera_bp.set_attribute('image_size_y', f'{CAMERA_HEIGHT}')
+    camera_bp.set_attribute('sensor_tick', f'{sampling_time}')
     camera_bp.set_attribute('fov', f'{fov}')
     camera_transform = carla.Transform(carla.Location(x=transform[0], y=transform[1], z=transform[2]),
                                        carla.Rotation(pitch=transform[3], yaw=transform[4], roll=transform[5]))
@@ -111,10 +119,10 @@ rear_transform = [0.0, 0.0, cz, 0.0, 180.0, 0.0]
 left_transform = [0.0, 0.0, cz, 0.0, -90.0, 0.0]
 right_transform = [0.0, 0.0, cz, 0.0, 90.0, 0.0]
 
-front_camera = attach_camera(ego_vehicle, front_transform)
-rear_camera = attach_camera(ego_vehicle, rear_transform)
-left_camera = attach_camera(ego_vehicle, left_transform)
-right_camera = attach_camera(ego_vehicle, right_transform)
+front_camera = attach_camera(ego_vehicle, front_transform,sampling_time)
+rear_camera = attach_camera(ego_vehicle, rear_transform,sampling_time)
+left_camera = attach_camera(ego_vehicle,left_transform,sampling_time)
+right_camera = attach_camera(ego_vehicle, right_transform,sampling_time)
 
 K = intrinsic(CAMERA_WIDTH, CAMERA_HEIGHT, FOV)
 R = extrinsic(front_transform)
@@ -196,6 +204,7 @@ def ego_to_bev_coords(x, y, wx_max, wy_min, wx_interval, wy_interval):
 
 running = True
 while running:
+    world.tick()
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             running = False
@@ -228,13 +237,15 @@ while running:
 
     ego_inverse_matrix = np.linalg.inv(np.array(ego_vehicle.get_transform().get_matrix()))
     ego_location = ego_vehicle.get_location()
-
+    ego_velocity = ego_vehicle.get_velocity()
     traffic = world.get_actors().filter('vehicle.*')
     for vehicle in traffic:
         if vehicle.id != ego_vehicle.id:
             vehicle_location = vehicle.get_location()
-            distance = ego_location.distance(vehicle_location)
+            vehicle_velocity = vehicle.get_velocity()
 
+
+            distance = ego_location.distance(vehicle_location)
             if distance <= wx_max:
                 bbox_world_coords = get_bounding_box_world_coords(vehicle)
                 bbox_ego_coords = transform_to_ego_coords(bbox_world_coords, ego_inverse_matrix)
@@ -245,8 +256,8 @@ while running:
                         
     pygame.display.flip()
 
-
-# 종료 시 actor 정리
+settings.synchronous_mode = False
+world.apply_settings(settings)
 front_camera.stop()
 rear_camera.stop()
 vehicle.destroy()
