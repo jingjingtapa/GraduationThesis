@@ -270,7 +270,7 @@ def ego_to_bev_coords(x, y, wx_max, wy_min, wx_interval, wy_interval):
     bev_y = int((wx_max - x) / wx_interval)  # x -> BEV 이미지의 y축
     return bev_x, bev_y
 
-model = YOLO('/home/jingjingtapa/다운로드/GraduationThesis/BEV/yolo/runs/obb/train3/weights/best.pt')
+model = YOLO('/home/jingjingtapa/다운로드/GraduationThesis/BEV/yolo/runs/obb/train4/weights/best.pt')
 running = True
 
 while running:
