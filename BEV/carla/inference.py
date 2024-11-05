@@ -116,7 +116,10 @@ class CarlaInitialize:
     def __init__(self):
         client = carla.Client('localhost', 2000)
         client.set_timeout(10.0)
+        traffic_manager = client.get_trafficmanager()
+        # traffic_manager.set_hybrid_physics_mode(enabled = True)
         self.world = client.get_world()
+        self.map = self.world.get_map()
 
         self.settings = self.world.get_settings()
         self.settings.synchronous_mode = True
@@ -198,15 +201,15 @@ class CarlaInitialize:
 sim = CarlaInitialize()
 sim.spawn_traffic(num_vehicles)
 
-wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval = int(sim.length/2), 30, 0.05, -10, 10, 0.05
+wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval = int(sim.length/2), 15, 0.05, -10, 10, 0.05
 bev = BEVConverter(wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval)
 
 pygame.init()
-screen_width = int((wy_max - wy_min) / wy_interval)
+screen_width = int((wy_max - wy_min) / wy_interval)*2
 screen_height = int(((wx_max - wx_min) / wx_interval)*2 + wx_min/wx_interval * 2)
 screen = pygame.display.set_mode((screen_width, screen_height))
 
-c_z, c_pitch = 2.5, -30.0
+c_z, c_pitch = 2.8, -30.0
 front_cam, rear_cam, left_cam, right_cam = sim.attatch_four_camera(c_z, c_pitch)
 K, R = bev.intrinsic(bev.CAMERA_WIDTH, bev.CAMERA_HEIGHT, bev.FOV), bev.extrinsic(sim.front_transform)
 
@@ -270,7 +273,15 @@ def ego_to_bev_coords(x, y, wx_max, wy_min, wx_interval, wy_interval):
     bev_y = int((wx_max - x) / wx_interval)  # x -> BEV 이미지의 y축
     return bev_x, bev_y
 
-model = YOLO('/home/jingjingtapa/다운로드/GraduationThesis/BEV/yolo/runs/obb/train4/weights/best.pt')
+def world_to_ego(waypoint_location, ego_inverse_matrix):
+    # World 좌표를 동차 좌표로 변환 [x, y, z, 1]
+    world_coords = np.array([waypoint_location.x, waypoint_location.y, waypoint_location.z, 1])
+    # Ego 차량 좌표계로 변환
+    ego_coords = np.dot(ego_inverse_matrix, world_coords)
+    # (x, y)만 반환하여 2D 평면에 표시
+    return ego_coords[0], ego_coords[1]
+
+model = YOLO('gunny.pt')
 running = True
 
 while running:
@@ -285,25 +296,42 @@ while running:
     front_rear_surface = pygame.image.fromstring(front_rear_combined.tobytes(), front_rear_combined.size, "RGBA")
     left_right_surface = pygame.image.fromstring(left_right_combined.tobytes(), left_right_combined.size, "RGBA")
     screen.blit(front_rear_surface, (0, 0))
-    screen.blit(left_right_surface, (0, 400))
+    screen.blit(left_right_surface, (0, int((wx_max-wy_max)/wx_interval)))
     
+    ego_point = [((sim.length/2), (sim.width/2)),
+                 (-(sim.length/2), (sim.width/2)),
+                 (-(sim.length/2), -(sim.width/2)),
+                 ((sim.length/2), -(sim.width/2))]
+    ego_point_bev = [ego_to_bev_coords(x, y+(wy_max - wy_min), wx_max, wy_min, wx_interval, wy_interval) for x, y in ego_point]
+    pygame.draw.polygon(screen, (255, 255, 255), ego_point_bev, 2)
+
     # inference
     model_input = bev.screen_to_pil_image(screen)
-    result = model.predict(model_input, nms=True, iou=0.5, verbose = False)
+    # result = model.predict(model_input, verbose = False)
+    result = model.track(model_input,conf = 0.5, iou = 0.4, persist = True, device = 'cuda', tracker = 'botsort.yaml', verbose = False)
+    print(result)
+    
     for object in result:
             if object.obb:
                 for i, car in enumerate(object.obb.xyxyxyxy):
-                    class_label = object.obb.cls[i].item()
-                    if class_label == 1:
-                        for x, y in car:
-                            pygame.draw.circle(screen, (0, 0, 255), (int(x), int(y)), 3) # emergency car : Blue
-                    else:
-                        for x, y in car:
-                            pygame.draw.circle(screen, (255, 255, 0), (int(x), int(y)), 3) # other car : Yellow
+                    # obj_id = object.obb.id[i]
+                    obj_cls = object.obb.cls[i].item()
+
+                    if obj_cls == 1: color = (0,0,255)
+                    elif obj_cls == 2: color = (0,255, 0)
+                    elif obj_cls == 0: color = (255, 0, 0)
+
+                    points = [(int(x+(wy_max - wy_min) / wy_interval), int(y)) for x, y in car]
+
+                    pygame.draw.polygon(screen, color, points, 2)
 
     ego_inverse_matrix = np.linalg.inv(np.array(sim.ego_vehicle.get_transform().get_matrix()))
     ego_location = sim.ego_vehicle.get_location()
-
+    waypoint = sim.map.get_waypoint(ego_location)
+    
+    n = wx_max  # 탐색 반경 (미터)
+    distance_step = 5.0  # 거리 간격 (미터)
+    
     # traffic = sim.world.get_actors().filter('vehicle.*')    
     # for vehicle in traffic:
     #     if vehicle.id != sim.ego_vehicle.id:
@@ -330,5 +358,4 @@ front_cam.stop()
 rear_cam.stop()
 left_cam.stop()
 right_cam.stop()
-bev.ego_vehicle.destroy()
 pygame.quit()
