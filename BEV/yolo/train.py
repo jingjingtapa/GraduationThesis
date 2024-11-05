@@ -7,4 +7,4 @@ ultralytics.checks()
 
 model = YOLO('yolo11n-obb.pt')
 
-model.train(data = 'dataset.yaml', epochs = 100, imgsz=640)
+model.train(data = 'dataset.yaml', epochs = 100, imgsz=640, optimizer = 'SGD', lr0 = 0.001)

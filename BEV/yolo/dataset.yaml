@@ -1,11 +1,12 @@
-train: /home/jingjingtapa/다운로드/dataset/train/images
-val: /home/jingjingtapa/다운로드/dataset/val/images
+train: /home/gunny/다운로드/dataset/train/images
+val: /home/gunny/다운로드/dataset/val/images
 # test: /path/to/dataset/images/test
 
 # num of class
-nc: 2
+nc: 3
 
 # class names
 names:
   0: other car
-  1: emergency car
+  1: emergency car on same direction
+  2: emergency car on opposite direction

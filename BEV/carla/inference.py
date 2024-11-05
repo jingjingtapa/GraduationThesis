@@ -198,7 +198,7 @@ class CarlaInitialize:
 sim = CarlaInitialize()
 sim.spawn_traffic(num_vehicles)
 
-wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval = int(sim.length/2), 30, 0.05, -10, 10, 0.05
+wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval = int(sim.length/2), 15, 0.05, -10, 10, 0.05
 bev = BEVConverter(wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval)
 
 pygame.init()
@@ -270,8 +270,9 @@ def ego_to_bev_coords(x, y, wx_max, wy_min, wx_interval, wy_interval):
     bev_y = int((wx_max - x) / wx_interval)  # x -> BEV 이미지의 y축
     return bev_x, bev_y
 
-model = YOLO('/home/jingjingtapa/다운로드/GraduationThesis/BEV/yolo/runs/obb/train3/weights/best.pt')
+model = YOLO('/home/gunny/다운로드/GraduationThesis/BEV/yolo/runs/obb/train5/weights/best.pt')
 running = True
+
 
 while running:
     sim.world.tick()
@@ -285,43 +286,47 @@ while running:
     front_rear_surface = pygame.image.fromstring(front_rear_combined.tobytes(), front_rear_combined.size, "RGBA")
     left_right_surface = pygame.image.fromstring(left_right_combined.tobytes(), left_right_combined.size, "RGBA")
     screen.blit(front_rear_surface, (0, 0))
-    screen.blit(left_right_surface, (0, 400))
+    screen.blit(left_right_surface, (0, int((wx_max-wy_max)/wx_interval)))
     
     # inference
     model_input = bev.screen_to_pil_image(screen)
-    result = model.predict(model_input, nms=True, iou=0.5, verbose = False)
+    result = model.predict(model_input, nms=True, iou=0.5)
+    # result = model.track(model_input, show = True, conf  = 0.4, persist = True)
+
     for object in result:
             if object.obb:
                 for i, car in enumerate(object.obb.xyxyxyxy):
                     class_label = object.obb.cls[i].item()
                     if class_label == 1:
                         for x, y in car:
-                            pygame.draw.circle(screen, (0, 0, 255), (int(x), int(y)), 3) # emergency car : Blue
+                            pygame.draw.circle(screen, (0, 0, 255), (int(x), int(y)), 3) # emergency car on same direction : Blue
+                    elif class_label == 2:
+                        for x, y in car:
+                            pygame.draw.circle(screen, (0, 255, 0), (int(x), int(y)), 3) # emergency car on other direction : Green
                     else:
                         for x, y in car:
                             pygame.draw.circle(screen, (255, 255, 0), (int(x), int(y)), 3) # other car : Yellow
-
     ego_inverse_matrix = np.linalg.inv(np.array(sim.ego_vehicle.get_transform().get_matrix()))
     ego_location = sim.ego_vehicle.get_location()
 
-    # traffic = sim.world.get_actors().filter('vehicle.*')    
-    # for vehicle in traffic:
-    #     if vehicle.id != sim.ego_vehicle.id:
-    #         vehicle_location = vehicle.get_location()
-    #         distance = ego_location.distance(vehicle_location)
-    #         if distance <= wx_max:
-    #             bbox_world_coords = get_bounding_box_world_coords(vehicle)
-    #             bbox_ego_coords = transform_to_ego_coords(bbox_world_coords, ego_inverse_matrix)
-    #             vehicle_bev_coord = []
-    #             if vehicle.type_id == 'vehicle.carlamotors.firetruck' or vehicle.type_id == 'vehicle.ford.ambulance':
-    #                 vehicle_bev_coord.append(1) # emergency car : class 1
-    #             else:
-    #                 vehicle_bev_coord.append(0) # other car : class 0
-    #             for coord in bbox_ego_coords:
-    #                 bev_x, bev_y = ego_to_bev_coords(coord[0], coord[1], wx_max, wy_min, wx_interval, wy_interval)
-    #                 if 0 <= bev_x < screen_width and 0 <= bev_y < screen_height:  # BEV 이미지 내에 있는지 확인
-    #                     pygame.draw.circle(screen, (255, 0, 0), (bev_x, bev_y), 3)  # 빨간색으로 점 표시
-
+    traffic = sim.world.get_actors().filter('vehicle.*')    
+    for vehicle in traffic:
+        if vehicle.id != sim.ego_vehicle.id:
+            vehicle_location = vehicle.get_location()
+            distance = ego_location.distance(vehicle_location)
+            if distance <= wx_max:
+                bbox_world_coords = get_bounding_box_world_coords(vehicle)
+                bbox_ego_coords = transform_to_ego_coords(bbox_world_coords, ego_inverse_matrix)
+                vehicle_bev_coord = []
+                if vehicle.type_id == 'vehicle.carlamotors.firetruck' or vehicle.type_id == 'vehicle.ford.ambulance':
+                    vehicle_bev_coord.append(1) # emergency car : class 1
+                else:
+                    vehicle_bev_coord.append(0) # other car : class 0
+                for coord in bbox_ego_coords:
+                    bev_x, bev_y = ego_to_bev_coords(coord[0], coord[1], wx_max, wy_min, wx_interval, wy_interval)
+                    if 0 <= bev_x < screen_width and 0 <= bev_y < screen_height:  # BEV 이미지 내에 있는지 확인
+                        pygame.draw.circle(screen, (255, 0, 0), (bev_x, bev_y), 3)  # 빨간색으로 점 표시
+        
     pygame.display.flip()
 
 sim.settings.synchronous_mode = False

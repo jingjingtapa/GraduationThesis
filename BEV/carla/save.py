@@ -2,7 +2,8 @@ import numpy as np
 import cv2, random, carla, pygame, getpass, os, time, math
 from PIL import Image
 
-num_vehicles = 40
+num_vehicles = 60
+num_emergency_vehicles = 20
 sampling_time = 0.1 # tick : 20Hz
 scene_delay = 10
 
@@ -83,8 +84,18 @@ def spawn_vehicles(world, blueprint_library, num_vehicles):
     vehicles_list = []
 
     emergency_vehicles = ['vehicle.*firetruck', 'vehicle.*ambulance']
-    for emergency in emergency_vehicles:
-        vehicle_bp = random.choice(blueprint_library.filter(emergency))
+
+    # for emergency in emergency_vehicles:
+    #     vehicle_bp = random.choice(blueprint_library.filter(emergency))
+    #     spawn_point = random.choice(spawn_points)
+    #     vehicle = world.try_spawn_actor(vehicle_bp, spawn_point)
+    #     if vehicle:
+    #         vehicle.set_autopilot(True)
+    #         vehicles_list.append(vehicle)
+
+    for i in range(num_emergency_vehicles):
+        emergency_type = random.choice(emergency_vehicles)
+        vehicle_bp = random.choice(blueprint_library.filter(emergency_type))
         spawn_point = random.choice(spawn_points)
         vehicle = world.try_spawn_actor(vehicle_bp, spawn_point)
         if vehicle:
@@ -110,6 +121,13 @@ settings.synchronous_mode = True
 settings.fixed_delta_seconds = sampling_time
 world.apply_settings(settings)
 
+traffic_lights = world.get_actors().filter('traffic.traffic_light')
+
+# for traffic_light in traffic_lights:
+#     traffic_light.set_state(carla.TrafficLightState.Green)  # 신호등을 녹색으로 설정
+#     traffic_light.set_green_time(9999.0)                    # 초록불 지속 시간을 매우 길게 설정
+#     traffic_light.freeze(True)  
+
 actors = world.get_actors().filter('vehicle.*')
 for actor in actors:
     actor.destroy()
@@ -133,7 +151,7 @@ length, width = ego_vehicle.bounding_box.extent.x*2, ego_vehicle.bounding_box.ex
 
 traffic_vehicles = spawn_vehicles(world, blueprint_library, num_vehicles)
 
-wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval = int(length/2), 30, 0.05, -10, 10, 0.05
+wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval = int(length/2), 15, 0.05, -10, 10, 0.05
 bev = BEVConverter(wx_min, wx_max, wx_interval, wy_min, wy_max, wy_interval)
 
 pygame.init()
@@ -245,8 +263,8 @@ def ego_to_bev_coords(x, y, wx_max, wy_min, wx_interval, wy_interval):
 
 splits = ['train','val','test']
 num_splits = [100,10,20]
-conditions = ['morning_normal','morning_foggy','night_normal','night_foggy']
-# conditions = ['night_foggy']
+#conditions = ['morning_normal','morning_foggy','night_normal','night_foggy']
+conditions = ['night_normal']
 num_img = 30
 def set_condition(condition):
     if condition == 'morning_normal':
@@ -346,18 +364,29 @@ for j in range(len(conditions)):
             left_right_surface = pygame.image.fromstring(left_right_combined.tobytes(), left_right_combined.size, "RGBA")
             
             screen.blit(front_rear_surface, (0, 0))
-            screen.blit(left_right_surface, (0, 400))
+            screen.blit(left_right_surface, (0, int((wx_max-wy_max)/wx_interval)))
+
+            if not ego_vehicle.is_alive:
+                    print("Ego vehicle is not alive. Re-initializing the actor.")
+                    ego_vehicle = world.spawn_actor(vehicle_bp, spawn_point)
+                    ego_vehicle.set_autopilot(True)
+                    physics_control = ego_vehicle.get_physics_control()
+                    physics_control.center_of_mass.z = -0.5
+                    for wheel in physics_control.wheels:
+                        wheel.suspension_stiffness = 10000.0
+                        wheel.damping_rate = 0.01
+                        wheel.tire_friction = 3.0
+                    ego_vehicle.apply_physics_control(physics_control)
 
             ego_inverse_matrix = np.linalg.inv(np.array(ego_vehicle.get_transform().get_matrix()))
+            ego_yaw = ego_vehicle.get_transform().rotation.yaw
             ego_location = ego_vehicle.get_location()
-            ego_velocity = ego_vehicle.get_velocity()
             traffic = world.get_actors().filter('vehicle.*')
-            
             traffic_list = []
             for vehicle in traffic:
                 if vehicle.id != ego_vehicle.id:
                     vehicle_location = vehicle.get_location()
-                    vehicle_velocity = vehicle.get_velocity()
+                    vehicle_yaw = vehicle.get_transform().rotation.yaw
 
                     distance = ego_location.distance(vehicle_location)
                     if distance <= wx_max:
@@ -365,9 +394,13 @@ for j in range(len(conditions)):
                         bbox_ego_coords = transform_to_ego_coords(bbox_world_coords, ego_inverse_matrix)
                         vehicle_bev_coord = []
                         if vehicle.type_id == 'vehicle.carlamotors.firetruck' or vehicle.type_id == 'vehicle.ford.ambulance':
-                            vehicle_bev_coord.append(1) # emergency car : class 1
+                            if (ego_yaw >= 0 and vehicle_yaw < 0) or (ego_yaw < 0 and vehicle_yaw >= 0):
+                                vehicle_bev_coord.append(2) # emergency car on opposite direction : class 2
+                            else:
+                                vehicle_bev_coord.append(1) # emergency car on same direction : class 1
                         else:
                             vehicle_bev_coord.append(0) # other car : class 0
+                        # print(vehicle.type_id, ego_yaw, vehicle_yaw)
                         for coord in bbox_ego_coords:
                             bev_x, bev_y = ego_to_bev_coords(coord[0], coord[1], wx_max, wy_min, wx_interval, wy_interval)
                             if 0 <= bev_x < screen_width and 0 <= bev_y < screen_height:  # BEV 이미지 내에 있는지 확인
@@ -377,7 +410,7 @@ for j in range(len(conditions)):
                         if len(vehicle_bev_coord) == 9:
                             traffic_list.append(vehicle_bev_coord)
             if cnt_img <= num_img:
-                if cnt_scene >= 1: # 처음에 차 떨어지는 장면 저장 안하기 위해
+                if cnt_scene >= 1 and len(traffic_list) > 0: # 처음에 차 떨어지는 장면 저장 안하기 위해
                     save(screen, traffic_list, cnt_scene, cnt_img)
                 cnt_img += 1
             elif num_img < cnt_img <= num_img*3: # Scene 간의 간격을 두기 위해
